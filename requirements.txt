@@ -1,0 +1,2 @@
+# Python dependencies for the Trivy Scan GitHub Action
+# No additional dependencies required for basic functionality
