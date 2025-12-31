@@ -1,0 +1,33 @@
+name: Example - Trivy SBOM Scan
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  trivy-scan:
+    name: Generate SBOM with Trivy
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy scan
+        uses: RomainValmo/FullTrivyScanCycloneDX@main
+        with:
+          scan-type: 'fs'
+          target: '.'
+          format: 'cyclonedx'
+          output-file: 'sbom-cyclonedx.json'
+          severity: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+      
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sbom
+          path: sbom-cyclonedx.json
+          retention-days: 30

@@ -1,0 +1,62 @@
+name: 'Full Trivy Scan with CycloneDX SBOM'
+description: 'Perform a complete Trivy security scan and generate CycloneDX SBOM'
+author: 'RomainValmo'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  scan-type:
+    description: 'Type of scan to perform (fs, image, config, etc.)'
+    required: false
+    default: 'fs'
+  target:
+    description: 'Target to scan (path for fs, image name for image scan)'
+    required: false
+    default: '.'
+  format:
+    description: 'Output format (cyclonedx, json, table, sarif)'
+    required: false
+    default: 'cyclonedx'
+  output-file:
+    description: 'Output file path for the scan results'
+    required: false
+    default: 'trivy-sbom.json'
+  severity:
+    description: 'Severities of vulnerabilities to detect (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL)'
+    required: false
+    default: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
+  vuln-type:
+    description: 'Vulnerability types (os,library)'
+    required: false
+    default: 'os,library'
+  exit-code:
+    description: 'Exit code when vulnerabilities are found'
+    required: false
+    default: '0'
+  trivy-version:
+    description: 'Version of Trivy to use'
+    required: false
+    default: 'latest'
+
+outputs:
+  sbom-file:
+    description: 'Path to the generated SBOM file'
+    value: ${{ steps.scan.outputs.sbom-file }}
+  scan-summary:
+    description: 'Summary of the scan results'
+    value: ${{ steps.scan.outputs.scan-summary }}
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.scan-type }}
+    - ${{ inputs.target }}
+    - ${{ inputs.format }}
+    - ${{ inputs.output-file }}
+    - ${{ inputs.severity }}
+    - ${{ inputs.vuln-type }}
+    - ${{ inputs.exit-code }}
+    - ${{ inputs.trivy-version }}
