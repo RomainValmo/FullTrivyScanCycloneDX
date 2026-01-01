@@ -12,7 +12,7 @@ DEPENDENCY_FILES = [
 
 # Versions stables par défaut
 DEFAULT_VERSIONS = {
-    "GO_VERSION": "1.23",
+    "GO_VERSION": "1.24",
     "NODE_VERSION": "22",
     "PYTHON_VERSION": "3.13",
     "RUST_VERSION": "1.83",
