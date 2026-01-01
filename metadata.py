@@ -98,10 +98,14 @@ def generate_metadata():
         with open(sbom_file, "r", encoding="utf-8") as f:
             sbom = json.load(f)
         detected = detect_runtime_versions(sbom)
+        if detected:
+            print(f"  Détecté dans {sbom_file.name}: {detected}")
         runtime_versions.update(detected)
     
     if runtime_versions:
-        print(f"🔍 Versions runtime détectées : {runtime_versions}")
+        print(f"🔍 Versions runtime détectées (total) : {runtime_versions}")
+    else:
+        print("⚠️ Aucune version runtime détectée !")
 
     # Deuxième passe : mapper les composants → sources
     for sbom_file in sbom_dir.glob("*.cdx.json"):
@@ -130,6 +134,10 @@ def generate_metadata():
                 
                 # Utiliser le module de mapping pour catégoriser
                 category = categorize_component(purl, name, source_type, source_file, runtime_versions)
+                
+                # Debug pour les outils toolchain
+                if "toolchain" in category.get("source_type", ""):
+                    print(f"  🔧 Toolchain: {name} -> type={category['source_type']}, version={category.get('version', 'NONE')}")
                 
                 # Si la catégorie retourne une version enrichie, l'utiliser
                 if "version" in category:
