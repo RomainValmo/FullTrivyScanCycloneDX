@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 import uuid
+import os
 
 def load_sbom_files(sbom_dir: Path):
     """Charge tous les fichiers .cdx.json du dossier sbom/"""
@@ -16,6 +17,8 @@ def merge_sboms(sboms: list) -> dict:
     """Fusionne plusieurs SBOM CycloneDX en un seul, sans doublons"""
     if not sboms:
         return {}
+    
+    repo_full = os.environ.get('GITHUB_REPOSITORY', 'unknown/unknown')
     
     # Structure de base du SBOM fusionné
     merged = {
@@ -32,7 +35,7 @@ def merge_sboms(sboms: list) -> dict:
             "component": {
                 "bom-ref": str(uuid.uuid4()),
                 "type": "application",
-                "name": "supply-chain-detector",
+                "name": repo_full,
                 "properties": []
             }
         },
