@@ -35,11 +35,17 @@ runs:
       run: python ${{ github.action_path }}/merge_sbom.py
       shell: bash
 
+    - name: generate metadata file
+      run: python ${{ github.action_path }}/metadata.py
+      shell: bash
+
     - name: Upload SBOM artifact
       uses: actions/upload-artifact@v4
       with:
         name: merged-sbom
-        path: sbom/merged-sbom.cdx.json
+      path: |
+        sbom/merged-sbom.cdx.json
+        sbom/metadata.json
 
     - name: Clean up
       run: rm -rf sbom/
