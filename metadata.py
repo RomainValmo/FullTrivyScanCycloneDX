@@ -91,7 +91,19 @@ def generate_metadata():
     component_sources = {}
     runtime_versions = {}  # Cache pour les versions runtime détectées
 
-    # Mapper les composants → sources
+    # Première passe : détecter les versions runtime depuis tous les SBOMs
+    for sbom_file in sbom_dir.glob("*.cdx.json"):
+        if "merged-sbom" in sbom_file.name:
+            continue
+        with open(sbom_file, "r", encoding="utf-8") as f:
+            sbom = json.load(f)
+        detected = detect_runtime_versions(sbom)
+        runtime_versions.update(detected)
+    
+    if runtime_versions:
+        print(f"🔍 Versions runtime détectées : {runtime_versions}")
+
+    # Deuxième passe : mapper les composants → sources
     for sbom_file in sbom_dir.glob("*.cdx.json"):
         if "merged-sbom" in sbom_file.name:
             continue
@@ -107,12 +119,6 @@ def generate_metadata():
 
         with open(sbom_file, "r", encoding="utf-8") as f:
             sbom = json.load(f)
-
-        # Première passe : détecter les versions runtime (Go, Python, etc.)
-        if not runtime_versions:
-            runtime_versions = detect_runtime_versions(sbom)
-            if runtime_versions:
-                print(f"🔍 Versions runtime détectées : {runtime_versions}")
 
         for component in sbom.get("components", []):
             ref = component.get("bom-ref") or component.get("purl")
