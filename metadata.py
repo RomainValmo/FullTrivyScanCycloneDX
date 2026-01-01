@@ -107,7 +107,8 @@ def generate_metadata():
     else:
         print("⚠️ Aucune version runtime détectée !")
 
-    # Deuxième passe : mapper les composants → sources
+    # Créer un mapping ref -> source pour déterminer d'où vient chaque composant
+    ref_to_source = {}
     for sbom_file in sbom_dir.glob("*.cdx.json"):
         if "merged-sbom" in sbom_file.name:
             continue
@@ -126,41 +127,56 @@ def generate_metadata():
 
         for component in sbom.get("components", []):
             ref = component.get("bom-ref") or component.get("purl")
-            name = component.get("name", "")
-            version = component.get("version")
-            
-            if ref and ref not in component_sources:
-                purl = component.get("purl", "")
-                
-                # Utiliser le module de mapping pour catégoriser
-                category = categorize_component(purl, name, source_type, source_file, runtime_versions)
-                
-                # Debug pour les outils toolchain
-                if "toolchain" in category.get("source_type", ""):
-                    print(f"  🔧 Toolchain: {name} -> type={category['source_type']}, version={category.get('version', 'NONE')}")
-                
-                # Si la catégorie retourne une version enrichie, l'utiliser
-                if "version" in category:
-                    version = category["version"]
-                
-                # Nettoyer le nom du package pour les outils toolchain/binaires
-                clean_name = name
-                if category["source_type"] in ["go-toolchain", "application-binary"]:
-                    # Extraire juste le nom du fichier (ex: usr/local/go/bin/go -> go)
-                    clean_name = name.split("/")[-1] if "/" in name else name
-                
-                component_sources[ref] = {
-                    "package_name": clean_name,
-                    "version": version,
-                    "purl": purl,
-                    "source_file": category["source_file"],
-                    "source_type": category["source_type"],
+            if ref and ref not in ref_to_source:
+                ref_to_source[ref] = {
+                    "source_type": source_type,
+                    "source_file": source_file,
                 }
                 
                 # Mettre à jour aussi le composant dans le SBOM pour appliquer les changements
                 component["name"] = clean_name
                 if version:
                     component["version"] = version
+
+    # Deuxième passe : modifier les composants dans le SBOM fusionné
+    for component in merged_sbom.get("components", []):
+        ref = component.get("bom-ref") or component.get("purl")
+        name = component.get("name", "")
+        version = component.get("version")
+        purl = component.get("purl", "")
+        
+        if not ref:
+            continue
+            
+        # Récupérer la source d'origine
+        source_info = ref_to_source.get(ref, {"source_type": "unknown", "source_file": "unknown"})
+        
+        # Catégoriser le composant
+        category = categorize_component(purl, name, source_info["source_type"], source_info["source_file"], runtime_versions)
+        
+        # Debug pour les outils toolchain
+        if "toolchain" in category.get("source_type", ""):
+            print(f"  🔧 Toolchain: {name} -> type={category['source_type']}, version={category.get('version', 'NONE')}")
+        
+        # Enrichir la version si disponible
+        if "version" in category:
+            version = category["version"]
+            component["version"] = version
+        
+        # Nettoyer le nom du package pour les outils toolchain/binaires
+        clean_name = name
+        if category["source_type"] in ["go-toolchain", "application-binary"]:
+            clean_name = name.split("/")[-1] if "/" in name else name
+            component["name"] = clean_name
+        
+        # Stocker dans component_sources
+        component_sources[ref] = {
+            "package_name": clean_name,
+            "version": version,
+            "purl": purl,
+            "source_file": category["source_file"],
+            "source_type": category["source_type"],
+        }
 
     vulnerabilities_metadata = []
 
