@@ -27,6 +27,9 @@ runs:
         sudo apt-get install -y trivy
       shell: bash
 
+    - name: Download Trivy DB
+      run: trivy image --download-db-only
+
     - name: Run trivy_scan.py
       run: python ${{ github.action_path }}/trivy_scan.py
       shell: bash
