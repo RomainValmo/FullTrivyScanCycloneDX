@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import os
 import subprocess
-from language_mappings import categorize_component
+from language_mappings import categorize_component, detect_runtime_versions
 
 
 def run_trivy_sbom_enrichment(sbom_dir: Path) -> tuple[Path, dict]:
@@ -89,6 +89,7 @@ def generate_metadata():
         merged_sbom = json.load(f)
 
     component_sources = {}
+    runtime_versions = {}  # Cache pour les versions runtime détectées
 
     # Mapper les composants → sources
     for sbom_file in sbom_dir.glob("*.cdx.json"):
@@ -107,18 +108,30 @@ def generate_metadata():
         with open(sbom_file, "r", encoding="utf-8") as f:
             sbom = json.load(f)
 
+        # Première passe : détecter les versions runtime (Go, Python, etc.)
+        if not runtime_versions:
+            runtime_versions = detect_runtime_versions(sbom)
+            if runtime_versions:
+                print(f"🔍 Versions runtime détectées : {runtime_versions}")
+
         for component in sbom.get("components", []):
             ref = component.get("bom-ref") or component.get("purl")
+            name = component.get("name", "")
+            version = component.get("version")
+            
             if ref and ref not in component_sources:
                 purl = component.get("purl", "")
-                name = component.get("name", "")
                 
                 # Utiliser le module de mapping pour catégoriser
-                category = categorize_component(purl, name, source_type, source_file)
+                category = categorize_component(purl, name, source_type, source_file, runtime_versions)
+                
+                # Si la catégorie retourne une version enrichie, l'utiliser
+                if "version" in category and not version:
+                    version = category["version"]
                 
                 component_sources[ref] = {
                     "package_name": name,
-                    "version": component.get("version"),
+                    "version": version,
                     "purl": purl,
                     "source_file": category["source_file"],
                     "source_type": category["source_type"],
