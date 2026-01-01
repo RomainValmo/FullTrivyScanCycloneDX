@@ -132,11 +132,17 @@ def generate_metadata():
                 category = categorize_component(purl, name, source_type, source_file, runtime_versions)
                 
                 # Si la catégorie retourne une version enrichie, l'utiliser
-                if "version" in category and not version:
+                if "version" in category:
                     version = category["version"]
                 
+                # Nettoyer le nom du package pour les outils toolchain/binaires
+                clean_name = name
+                if category["source_type"] in ["go-toolchain", "application-binary"]:
+                    # Extraire juste le nom du fichier (ex: usr/local/go/bin/go -> go)
+                    clean_name = name.split("/")[-1] if "/" in name else name
+                
                 component_sources[ref] = {
-                    "package_name": name,
+                    "package_name": clean_name,
                     "version": version,
                     "purl": purl,
                     "source_file": category["source_file"],
