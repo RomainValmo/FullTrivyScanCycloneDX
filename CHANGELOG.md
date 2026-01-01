@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/RomainValmo/FullTrivyScanCycloneDX/compare/v1.0.0...v1.0.1) (2026-01-01)
+
+### Bug Fixes
+
+* add semantic badge ([ed2475b](https://github.com/RomainValmo/FullTrivyScanCycloneDX/commit/ed2475b0905c9a77626c2fac8d454562e5998ed2))
+
 ## 1.0.0 (2026-01-01)
 
 ### Features
