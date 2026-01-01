@@ -132,6 +132,11 @@ def generate_metadata():
                     "source_type": source_type,
                     "source_file": source_file,
                 }
+                
+                # Mettre à jour aussi le composant dans le SBOM pour appliquer les changements
+                component["name"] = clean_name
+                if version:
+                    component["version"] = version
 
     # Deuxième passe : modifier les composants dans le SBOM fusionné
     for component in merged_sbom.get("components", []):
@@ -235,14 +240,15 @@ def generate_metadata():
     with open(output, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
     
-    # Sauvegarder le SBOM fusionné avec les composants mis à jour
-    with open(enriched_sbom_file, "w", encoding="utf-8") as f:
+    # Sauvegarder aussi le merged-sbom.cdx.json avec les composants mis à jour
+    merged_sbom_path = sbom_dir / "merged-sbom.cdx.json"
+    with open(merged_sbom_path, "w", encoding="utf-8") as f:
         json.dump(merged_sbom, f, indent=2, ensure_ascii=False)
 
     print("✨ metadata.json généré avec succès")
     print(f"   • composants : {len(component_sources)}")
     print(f"   • vulnérabilités : {len(vulnerabilities_metadata)}")
-    print("✨ merged-sbom.enriched.cdx.json mis à jour avec les noms propres et versions enrichies")
+    print("✨ merged-sbom.cdx.json mis à jour avec les noms propres et versions enrichies")
 
 
 if __name__ == "__main__":
