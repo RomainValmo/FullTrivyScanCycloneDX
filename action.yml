@@ -29,6 +29,7 @@ runs:
 
     - name: Download Trivy DB
       run: trivy image --download-db-only
+      shell: bash
 
     - name: Run trivy_scan.py
       run: python ${{ github.action_path }}/trivy_scan.py
