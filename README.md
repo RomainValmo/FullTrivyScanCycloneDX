@@ -7,6 +7,7 @@
 [![Tests Count](https://img.shields.io/badge/tests-61%20passed-brightgreen.svg)](test/)
 [![Code of Conduct](https://img.shields.io/badge/Contributor%20Covenant-2.0-4baaaa.svg)](CODE_OF_CONDUCT.md)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+[![semantic-release](https://img.shields.io/badge/semantic--release-automated-brightgreen.svg?logo=semantic-release)](https://github.com/semantic-release/semantic-release)
 
 Une GitHub Action complète pour analyser la sécurité de vos projets, générer des SBOM CycloneDX et produire des métadonnées enrichies.
 
