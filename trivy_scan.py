@@ -1,6 +1,7 @@
 import os
 import subprocess
 from pathlib import Path
+import re
 
 # Liste des fichiers de dépendances à scanner
 DEPENDENCY_FILES = [
@@ -8,6 +9,40 @@ DEPENDENCY_FILES = [
     "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
     "composer.lock", "Gemfile.lock", "go.sum", "Cargo.lock", "packages.lock.json", "pom.xml", "build.gradle"
 ]
+
+# Versions stables par défaut
+DEFAULT_VERSIONS = {
+    "GO_VERSION": "1.23",
+    "NODE_VERSION": "22",
+    "PYTHON_VERSION": "3.13",
+    "RUST_VERSION": "1.83",
+    "JAVA_VERSION": "21",
+}
+
+def extract_build_args(dockerfile: Path) -> dict:
+    """
+    Extrait les ARG depuis un Dockerfile et retourne les build-args à passer.
+    """
+    build_args = {}
+    with open(dockerfile, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    # Trouver tous les ARG dans le Dockerfile
+    arg_pattern = r'ARG\s+([A-Z_]+)(?:=([^\s]+))?'
+    for match in re.finditer(arg_pattern, content):
+        arg_name = match.group(1)
+        default_value = match.group(2)
+        
+        # Utiliser la valeur par défaut du Dockerfile ou notre mapping
+        if arg_name in DEFAULT_VERSIONS:
+            build_args[arg_name] = DEFAULT_VERSIONS[arg_name]
+        elif default_value:
+            build_args[arg_name] = default_value
+        else:
+            # Si pas de défaut, essayer de deviner
+            build_args[arg_name] = DEFAULT_VERSIONS.get(arg_name, "latest")
+    
+    return build_args
 
 def find_dockerfiles(root_dir: Path, max_depth: int = 3):
     dockerfiles = []
@@ -43,7 +78,6 @@ if __name__ == "__main__":
     for dep_file in dep_files:
         # Tous les fichiers de sortie dans sbom/ avec nom unique
         out_file = sbom_dir / (dep_file.name + ".cdx.json")
-        # Avertissement si fichier sans lock
 
         print(f"Scan Trivy CycloneDX : {dep_file} -> {out_file}")
         # Conversion des chemins relatifs en format POSIX pour Docker
@@ -59,19 +93,35 @@ if __name__ == "__main__":
             f"/project/{dep_file_posix}"
         ]
         subprocess.run(cmd, check=True)
+    
     print(f"Scan terminé. Tous les SBOM sont dans : {sbom_dir}")
     dockerfiles = find_dockerfiles(root_dir)
     print(f"Dockerfiles trouvés : {dockerfiles}")
+    
     for dockerfile in dockerfiles:
+        # Extraire les build args nécessaires
+        build_args = extract_build_args(dockerfile)
+        print(f"📝 Build args détectés pour {dockerfile.name}: {build_args}")
+        
         image_tag = f"sbom-scan-{dockerfile.parent.name.lower()}"
         print(f"Build de l'image Docker : {dockerfile} -> {image_tag}")
+        
+        # Construire la commande avec les build-args
         build_cmd = [
             "docker", "build",
             "-f", str(dockerfile),
             "-t", image_tag,
-            str(dockerfile.parent)
         ]
+        
+        # Ajouter les --build-arg
+        for arg_name, arg_value in build_args.items():
+            build_cmd.extend(["--build-arg", f"{arg_name}={arg_value}"])
+        
+        build_cmd.append(str(dockerfile.parent))
+        
+        print(f"🔨 Commande: {' '.join(build_cmd)}")
         subprocess.run(build_cmd, check=True)
+        
         # Scan de l'image Docker
         out_file = sbom_dir / (dockerfile.parent.name + "-image.cdx.json")
         print(f"Scan Trivy CycloneDX de l'image : {image_tag} -> {out_file}")
