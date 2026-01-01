@@ -1,62 +1,46 @@
 name: 'Full Trivy Scan with CycloneDX SBOM'
-description: 'Perform a complete Trivy security scan and generate CycloneDX SBOM'
+description: 'Perform a complete Trivy security scan, generate and merge CycloneDX SBOMs, and upload as artifact'
 author: 'RomainValmo'
 
 branding:
   icon: 'shield'
   color: 'blue'
 
-inputs:
-  scan-type:
-    description: 'Type of scan to perform (fs, image, config, etc.)'
-    required: false
-    default: 'fs'
-  target:
-    description: 'Target to scan (path for fs, image name for image scan)'
-    required: false
-    default: '.'
-  format:
-    description: 'Output format (cyclonedx, json, table, sarif)'
-    required: false
-    default: 'cyclonedx'
-  output-file:
-    description: 'Output file path for the scan results'
-    required: false
-    default: 'trivy-sbom.json'
-  severity:
-    description: 'Severities of vulnerabilities to detect (UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL)'
-    required: false
-    default: 'UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL'
-  vuln-type:
-    description: 'Vulnerability types (os,library)'
-    required: false
-    default: 'os,library'
-  exit-code:
-    description: 'Exit code when vulnerabilities are found'
-    required: false
-    default: '0'
-  trivy-version:
-    description: 'Version of Trivy to use'
-    required: false
-    default: 'latest'
+# Pas d'inputs pour cette version simplifiée
+inputs: {}
 
 outputs:
   sbom-file:
-    description: 'Path to the generated SBOM file'
-    value: ${{ steps.scan.outputs.sbom-file }}
-  scan-summary:
-    description: 'Summary of the scan results'
-    value: ${{ steps.scan.outputs.scan-summary }}
+    description: 'Path to the merged SBOM file'
+    value: sbom/merged-sbom.cdx.json
 
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
-  args:
-    - ${{ inputs.scan-type }}
-    - ${{ inputs.target }}
-    - ${{ inputs.format }}
-    - ${{ inputs.output-file }}
-    - ${{ inputs.severity }}
-    - ${{ inputs.vuln-type }}
-    - ${{ inputs.exit-code }}
-    - ${{ inputs.trivy-version }}
+  using: 'composite'
+  steps:
+    - name: Install Trivy
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget apt-transport-https gnupg lsb-release curl
+        wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+        echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+        sudo apt-get update
+        sudo apt-get install -y trivy
+      shell: bash
+
+    - name: Run trivy_scan.py
+      run: python ${{ github.action_path }}/trivy_scan.py
+      shell: bash
+
+    - name: Run merge_sbom.py
+      run: python ${{ github.action_path }}/merge_sbom.py
+      shell: bash
+
+    - name: Upload SBOM artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: merged-sbom
+        path: sbom/merged-sbom.cdx.json
+
+    - name: Clean up
+      run: rm -rf sbom/
+      shell: bash
