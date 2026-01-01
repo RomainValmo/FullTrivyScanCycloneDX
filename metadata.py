@@ -5,18 +5,18 @@ import os
 import subprocess
 
 
-def run_trivy_sbom_enrichment(sbom_dir: Path) -> Path:
+def run_trivy_sbom_enrichment(sbom_dir: Path) -> tuple[Path, dict]:
     """
     Enrichit le SBOM avec Trivy (fixed_version, status, etc.)
+    Retourne le SBOM enrichi + un mapping CVE -> FixedVersion
     """
     input_sbom = sbom_dir / "merged-sbom.cdx.json"
     output_sbom = sbom_dir / "merged-sbom.enriched.cdx.json"
-
-    if output_sbom.exists():
-        return output_sbom
+    output_json = sbom_dir / "merged-sbom.enriched.json"
 
     print("🔎 Enrichissement SBOM via Trivy…")
 
+    # Scan CycloneDX
     subprocess.run(
         [
             "trivy", "sbom",
@@ -30,7 +30,37 @@ def run_trivy_sbom_enrichment(sbom_dir: Path) -> Path:
         check=True,
     )
 
-    return output_sbom
+    # Scan JSON pour extraire les FixedVersion
+    subprocess.run(
+        [
+            "trivy", "sbom",
+            str(input_sbom),
+            "--scanners", "vuln",
+            "--format", "json",
+            "--output", str(output_json),
+            "--skip-db-update",
+            "--quiet",
+        ],
+        check=True,
+    )
+
+    # Extraire les FixedVersion depuis le JSON
+    vuln_fixed_versions = {}
+    with open(output_json, "r", encoding="utf-8") as f:
+        trivy_json = json.load(f)
+    
+    for result in trivy_json.get("Results", []):
+        for vuln in result.get("Vulnerabilities", []):
+            vuln_id = vuln.get("VulnerabilityID")
+            fixed_version = vuln.get("FixedVersion")
+            if vuln_id and fixed_version:
+                # Stocker toutes les fixed versions pour cette CVE
+                if vuln_id not in vuln_fixed_versions:
+                    vuln_fixed_versions[vuln_id] = []
+                if fixed_version not in vuln_fixed_versions[vuln_id]:
+                    vuln_fixed_versions[vuln_id].append(fixed_version)
+
+    return output_sbom, vuln_fixed_versions
 
 
 def detect_fix_status(fixed_version, version_infos):
@@ -51,8 +81,8 @@ def generate_metadata():
     root_dir = Path.cwd()
     sbom_dir = root_dir / "sbom"
 
-    # 🔥 Enrichissement Trivy
-    enriched_sbom_file = run_trivy_sbom_enrichment(sbom_dir)
+    # 🔥 Enrichissement Trivy (CycloneDX + JSON pour FixedVersion)
+    enriched_sbom_file, vuln_fixed_versions = run_trivy_sbom_enrichment(sbom_dir)
 
     with open(enriched_sbom_file, "r", encoding="utf-8") as f:
         merged_sbom = json.load(f)
@@ -101,10 +131,17 @@ def generate_metadata():
             source_info = component_sources[ref]
             fixed_version = None
 
+            # Essayer d'abord depuis le CycloneDX
             for v in affect.get("versions", []):
                 if v.get("status") in ["fixed", "unaffected"] and v.get("version"):
                     fixed_version = v["version"]
                     break
+
+            # Si pas trouvé, utiliser le JSON
+            if not fixed_version and vuln_id in vuln_fixed_versions:
+                # Prendre la première version disponible (ou les joindre si multiples)
+                fixed_versions_list = vuln_fixed_versions[vuln_id]
+                fixed_version = ", ".join(fixed_versions_list) if len(fixed_versions_list) > 1 else fixed_versions_list[0]
 
             fix_status = detect_fix_status(fixed_version, affect.get("versions", []))
 
