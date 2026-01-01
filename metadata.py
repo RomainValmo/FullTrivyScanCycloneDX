@@ -235,14 +235,19 @@ def generate_metadata():
     with open(output, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
     
-    # Sauvegarder le SBOM fusionné avec les composants mis à jour
+    # Sauvegarder le SBOM fusionné enrichi avec les composants mis à jour
     with open(enriched_sbom_file, "w", encoding="utf-8") as f:
+        json.dump(merged_sbom, f, indent=2, ensure_ascii=False)
+    
+    # Sauvegarder aussi dans le fichier merged-sbom.cdx.json original
+    merged_sbom_original = sbom_dir / "merged-sbom.cdx.json"
+    with open(merged_sbom_original, "w", encoding="utf-8") as f:
         json.dump(merged_sbom, f, indent=2, ensure_ascii=False)
 
     print("✨ metadata.json généré avec succès")
     print(f"   • composants : {len(component_sources)}")
     print(f"   • vulnérabilités : {len(vulnerabilities_metadata)}")
-    print("✨ merged-sbom.enriched.cdx.json mis à jour avec les noms propres et versions enrichies")
+    print("✨ SBOMs mis à jour avec les noms propres et versions enrichies")
 
 
 if __name__ == "__main__":
