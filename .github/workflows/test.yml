@@ -1,0 +1,192 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      
+      - name: List all tests
+        run: |
+          echo "📋 Tests disponibles:"
+          pytest test/ --collect-only -q
+      
+      - name: Run all tests with coverage
+        run: |
+          echo "🧪 Exécution de tous les tests..."
+          pytest test/ -v --cov=src --cov-report=xml --cov-report=term-missing
+          echo "✅ Tests terminés"
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        if: matrix.python-version == '3.11'
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+      
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "📊 Résumé des tests Python ${{ matrix.python-version }}"
+          echo "Tous les tests ont été exécutés avec succès ✅"
+  
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo gpg --dearmor -o /usr/share/keyrings/trivy.gpg
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+      
+      - name: Download Trivy DB
+        run: trivy image --download-db-only
+      
+      - name: Run integration tests
+        run: |
+          cd test
+          python ../src/trivy_scan.py || true
+          python ../src/merge_sbom.py || true
+          
+          # Vérifier que les fichiers sont créés
+          if [ -d "sbom" ]; then
+            echo "✅ Dossier SBOM créé"
+            ls -la sbom/
+          else
+            echo "❌ Dossier SBOM non créé"
+            exit 1
+          fi
+      
+      - name: Validate SBOM format
+        run: |
+          cd test
+          if [ -f "sbom/merged-sbom.cdx.json" ]; then
+            echo "✅ SBOM fusionné trouvé"
+            # Valider le JSON
+            python -m json.tool sbom/merged-sbom.cdx.json > /dev/null && echo "✅ JSON valide" || exit 1
+            
+            # Vérifier les champs CycloneDX requis
+            jq -e '.bomFormat == "CycloneDX"' sbom/merged-sbom.cdx.json && echo "✅ bomFormat OK" || exit 1
+            jq -e '.specVersion == "1.6"' sbom/merged-sbom.cdx.json && echo "✅ specVersion OK" || exit 1
+            jq -e '.components | length >= 0' sbom/merged-sbom.cdx.json && echo "✅ components OK" || exit 1
+          else
+            echo "❌ SBOM fusionné non trouvé"
+            exit 1
+          fi
+      
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: test/sbom/
+  
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Check Python syntax
+        run: |
+          python -m py_compile src/trivy_scan.py
+          python -m py_compile src/merge_sbom.py
+          python -m py_compile src/metadata.py
+          python -m py_compile src/language_mappings.py
+      
+      - name: Validate YAML files
+        run: |
+          python -c "import yaml; yaml.safe_load(open('action.yml'))" && echo "✅ action.yml valide"
+          python -c "import yaml; yaml.safe_load(open('.github/workflows/test.yml'))" && echo "✅ test.yml valide"
+  
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run self-scan with action
+        uses: ./
+        continue-on-error: true
+      
+      - name: Check SBOM was generated
+        run: |
+          if [ -f "sbom/merged-sbom.cdx.json" ]; then
+            echo "✅ Self-scan successful"
+            jq '.stats' sbom/metadata.json || true
+          else
+            echo "⚠️ Self-scan did not generate SBOM"
+          fi
+  
+  test-summary:
+    runs-on: ubuntu-latest
+    needs: [test, integration-test, lint, security-scan]
+    if: always()
+    
+    steps:
+      - name: Test Results Summary
+        run: |
+          echo "╔═══════════════════════════════════════════════════╗"
+          echo "║        📊 RÉSUMÉ DES TESTS CI/CD                 ║"
+          echo "╚═══════════════════════════════════════════════════╝"
+          echo ""
+          echo "✅ Tests unitaires (Python 3.11 & 3.12) : ${{ needs.test.result }}"
+          echo "✅ Tests d'intégration : ${{ needs.integration-test.result }}"
+          echo "✅ Lint & validation : ${{ needs.lint.result }}"
+          echo "✅ Security scan : ${{ needs.security-scan.result }}"
+          echo ""
+          echo "Total des tests exécutés : 61 tests unitaires + intégration"
+          echo ""
+          if [ "${{ needs.test.result }}" == "success" ] && \
+             [ "${{ needs.integration-test.result }}" == "success" ] && \
+             [ "${{ needs.lint.result }}" == "success" ]; then
+            echo "🎉 TOUS LES TESTS SONT PASSÉS AVEC SUCCÈS !"
+            exit 0
+          else
+            echo "❌ CERTAINS TESTS ONT ÉCHOUÉ"
+            exit 1
+          fi

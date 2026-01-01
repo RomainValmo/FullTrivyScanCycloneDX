@@ -6,6 +6,9 @@ branding:
   icon: 'shield'
   color: 'blue'
 
+# Licensed under the MIT License
+# Copyright (c) 2025 RomainValmo
+
 # Pas d'inputs pour cette version simplifiée
 inputs: {}
 
@@ -32,15 +35,15 @@ runs:
       shell: bash
 
     - name: Run trivy_scan.py
-      run: python ${{ github.action_path }}/trivy_scan.py
+      run: python ${{ github.action_path }}/src/trivy_scan.py
       shell: bash
 
     - name: Run merge_sbom.py
-      run: python ${{ github.action_path }}/merge_sbom.py
+      run: python ${{ github.action_path }}/src/merge_sbom.py
       shell: bash
 
     - name: generate metadata file
-      run: python ${{ github.action_path }}/metadata.py
+      run: python ${{ github.action_path }}/src/metadata.py
       shell: bash
 
     - name: Upload SBOM artifact

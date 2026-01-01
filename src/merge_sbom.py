@@ -1,8 +1,25 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Full Trivy Scan with CycloneDX SBOM
+Copyright (c) 2025 RomainValmo
+Licensed under the MIT License - see LICENSE file for details
+
+This module merges multiple CycloneDX SBOM files into a single consolidated SBOM.
+"""
+
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 import os
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 def load_sbom_files(sbom_dir: Path):
     """Charge tous les fichiers .cdx.json du dossier sbom/"""
@@ -28,7 +45,7 @@ def merge_sboms(sboms: list) -> dict:
         "serialNumber": f"urn:uuid:{uuid.uuid4()}",
         "version": 1,
         "metadata": {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
             "tools": {
                 "components": []
             },
@@ -95,33 +112,32 @@ def merge_sboms(sboms: list) -> dict:
     return merged
 
 if __name__ == "__main__":
-    # Utiliser le répertoire de travail actuel (dépôt appelant)
     root_dir = Path.cwd()
     sbom_dir = root_dir / "sbom"
     
     if not sbom_dir.exists():
-        print(f"Dossier {sbom_dir} introuvable.")
+        logger.error(f"Dossier {sbom_dir} introuvable.")
         exit(1)
     
-    print(f"Chargement des fichiers SBOM depuis : {sbom_dir}")
+    logger.info(f"Chargement des fichiers SBOM depuis : {sbom_dir}")
     sboms = load_sbom_files(sbom_dir)
-    print(f"Fichiers SBOM trouvés : {len(sboms)}")
+    logger.info(f"Fichiers SBOM trouvés : {len(sboms)}")
     
     if not sboms:
-        print("Aucun fichier SBOM à fusionner.")
+        logger.info("Aucun fichier SBOM à fusionner.")
         exit(0)
     
-    print("Fusion des SBOM...")
+    logger.info("Fusion des SBOM...")
     merged_sbom = merge_sboms(sboms)
     
     # Statistiques
     total_components = len(merged_sbom.get("components", []))
     total_vulns = len(merged_sbom.get("vulnerabilities", []))
-    print(f"SBOM fusionné : {total_components} composants, {total_vulns} vulnérabilités")
+    logger.info(f"SBOM fusionné : {total_components} composants, {total_vulns} vulnérabilités")
     
     # Sauvegarde du SBOM fusionné
     output_file = sbom_dir / "merged-sbom.cdx.json"
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(merged_sbom, f, indent=2, ensure_ascii=False)
     
-    print(f"SBOM fusionné sauvegardé dans : {output_file}")
+    logger.info(f"SBOM fusionné sauvegardé dans : {output_file}")

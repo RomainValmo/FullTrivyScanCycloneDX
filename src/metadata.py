@@ -1,9 +1,25 @@
-# generate_metadata.py
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Full Trivy Scan with CycloneDX SBOM
+Copyright (c) 2025 RomainValmo
+Licensed under the MIT License - see LICENSE file for details
+
+This module generates enriched metadata from merged SBOMs with Trivy vulnerability data.
+"""
+
 import json
 from pathlib import Path
 import os
 import subprocess
 from language_mappings import categorize_component, detect_runtime_versions
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s"
+)
+logger = logging.getLogger(__name__)
 
 
 def run_trivy_sbom_enrichment(sbom_dir: Path) -> tuple[Path, dict]:
@@ -99,13 +115,13 @@ def generate_metadata():
             sbom = json.load(f)
         detected = detect_runtime_versions(sbom)
         if detected:
-            print(f"  Détecté dans {sbom_file.name}: {detected}")
+            logger.info(f"  Détecté dans {sbom_file.name}: {detected}")
         runtime_versions.update(detected)
     
     if runtime_versions:
-        print(f"🔍 Versions runtime détectées (total) : {runtime_versions}")
+        logger.info(f"🔍 Versions runtime détectées (total) : {runtime_versions}")
     else:
-        print("⚠️ Aucune version runtime détectée !")
+        logger.warning("⚠️ Aucune version runtime détectée !")
 
     # Créer un mapping ref -> source pour déterminer d'où vient chaque composant
     ref_to_source = {}
@@ -151,7 +167,7 @@ def generate_metadata():
         
         # Debug pour les outils toolchain
         if "toolchain" in category.get("source_type", ""):
-            print(f"  🔧 Toolchain: {name} -> type={category['source_type']}, version={category.get('version', 'NONE')}")
+            logger.info(f"  🔧 Toolchain: {name} -> type={category['source_type']}, version={category.get('version', 'NONE')}")
         
         # Enrichir la version si disponible
         if "version" in category:
@@ -235,20 +251,14 @@ def generate_metadata():
     with open(output, "w", encoding="utf-8") as f:
         json.dump(metadata, f, indent=2, ensure_ascii=False)
     
-    # Sauvegarder le SBOM fusionné enrichi avec les composants mis à jour
-    with open(enriched_sbom_file, "w", encoding="utf-8") as f:
-        json.dump(merged_sbom, f, indent=2, ensure_ascii=False)
-    
-    # Sauvegarder aussi dans le fichier merged-sbom.cdx.json original
     merged_sbom_original = sbom_dir / "merged-sbom.cdx.json"
     with open(merged_sbom_original, "w", encoding="utf-8") as f:
         json.dump(merged_sbom, f, indent=2, ensure_ascii=False)
 
-    print("✨ metadata.json généré avec succès")
-    print(f"   • composants : {len(component_sources)}")
-    print(f"   • vulnérabilités : {len(vulnerabilities_metadata)}")
-    print("✨ SBOMs mis à jour avec les noms propres et versions enrichies")
-
+    logger.info("✨ metadata.json généré avec succès")
+    logger.info(f"   • composants : {len(component_sources)}")
+    logger.info(f"   • vulnérabilités : {len(vulnerabilities_metadata)}")
+    logger.info("✨ SBOMs mis à jour avec les noms propres et versions enrichies")
 
 if __name__ == "__main__":
     generate_metadata()

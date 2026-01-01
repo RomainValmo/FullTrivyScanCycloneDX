@@ -1,6 +1,13 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Mappings des composants par langage pour catégoriser les sources correctement.
+Full Trivy Scan with CycloneDX SBOM
+Copyright (c) 2025 RomainValmo
+Licensed under the MIT License - see LICENSE file for details
+
+This module provides language-specific mappings and component categorization.
 """
+
 import re
 
 
