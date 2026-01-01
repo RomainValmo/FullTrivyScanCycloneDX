@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import os
 import subprocess
+from language_mappings import categorize_component
 
 
 def run_trivy_sbom_enrichment(sbom_dir: Path) -> tuple[Path, dict]:
@@ -109,12 +110,18 @@ def generate_metadata():
         for component in sbom.get("components", []):
             ref = component.get("bom-ref") or component.get("purl")
             if ref and ref not in component_sources:
+                purl = component.get("purl", "")
+                name = component.get("name", "")
+                
+                # Utiliser le module de mapping pour catégoriser
+                category = categorize_component(purl, name, source_type, source_file)
+                
                 component_sources[ref] = {
-                    "package_name": component.get("name"),
+                    "package_name": name,
                     "version": component.get("version"),
-                    "purl": component.get("purl"),
-                    "source_file": source_file,
-                    "source_type": source_type,
+                    "purl": purl,
+                    "source_file": category["source_file"],
+                    "source_type": category["source_type"],
                 }
 
     vulnerabilities_metadata = []
