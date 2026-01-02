@@ -8,8 +8,6 @@
 - **Couverture cible** : > 80%
 - **CI/CD** : ✅ Configuré
 
-## 🎯 Ce qui a été ajouté
-
 ### 1. Tests Unitaires (56 tests)
 
 ```
@@ -172,12 +170,12 @@ Ajoutés au README.md :
 
 ## 📚 Documentation Créée
 
-| Fichier | Description | Lignes |
-|---------|-------------|--------|
-| test/README.md | Guide complet des tests | ~160 |
-| TESTING.md | Guide installation et exécution | ~100 |
-| TESTS_SUMMARY.md | Résumé détaillé | ~280 |
-| test-cheatsheet.sh | Aide-mémoire commandes | ~50 |
+| Fichier            | Description                     | Lignes |
+| ------------------ | ------------------------------- | ------ |
+| test/README.md     | Guide complet des tests         | ~160   |
+| TESTING.md         | Guide installation et exécution | ~100   |
+| TESTS_SUMMARY.md   | Résumé détaillé                 | ~280   |
+| test-cheatsheet.sh | Aide-mémoire commandes          | ~50    |
 
 ## ✅ Checklist Pré-Commit
 
