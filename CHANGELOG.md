@@ -1,3 +1,10 @@
+## [1.0.6](https://github.com/RomainValmo/FullTrivyScanCycloneDX/compare/v1.0.5...v1.0.6) (2026-01-02)
+
+### Bug Fixes
+
+* **core:** Architecture and docs for OpenSource ([3543db4](https://github.com/RomainValmo/FullTrivyScanCycloneDX/commit/3543db47d336931da4399f353e7faf2585d5370d))
+* **core:** Architecture and docs for OpenSource ([6903ef5](https://github.com/RomainValmo/FullTrivyScanCycloneDX/commit/6903ef5f6811b9976195a4171a45193e66c98ca0))
+
 ## [1.0.5](https://github.com/RomainValmo/FullTrivyScanCycloneDX/compare/v1.0.4...v1.0.5) (2026-01-02)
 
 ### Bug Fixes
