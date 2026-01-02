@@ -15,7 +15,7 @@ import logging
 import re
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 logging.basicConfig(
     level=logging.INFO,
@@ -227,7 +227,7 @@ def merge_cyclonedx_sboms(base_sbom_path: Path, runtime_components: list) -> Non
         # Mettre à jour le timestamp
         if "metadata" not in sbom:
             sbom["metadata"] = {}
-        sbom["metadata"]["timestamp"] = datetime.now(datetime.UTC).isoformat().replace('+00:00', 'Z')
+        sbom["metadata"]["timestamp"] = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
         
         # Supprimer l'ancien fichier et créer un nouveau avec les bonnes permissions
         os.remove(base_sbom_path)
