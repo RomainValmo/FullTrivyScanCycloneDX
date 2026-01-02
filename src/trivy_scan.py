@@ -317,7 +317,7 @@ if __name__ == "__main__":
             "-v", "/var/run/docker.sock:/var/run/docker.sock",
             "aquasec/trivy:latest", "image",
             "--format", "cyclonedx",
-            "--scanners", "vuln,os",
+            "--scanners", "vuln",
             "--output", f"/project/sbom/{dockerfile.parent.name}-image.cdx.json",
             image_tag
         ]
