@@ -13,7 +13,7 @@ Voici la liste des éléments mis en place pour respecter les standards open sou
 ## ✅ Documentation
 
 - [x] **README.md** - Documentation complète avec badges
-  - Badges : Tests, Codecov, License, Python version, Code of Conduct, PRs Welcome
+  - Badges : Tests, Codecov, License, Python version, Code of Conduct, PRs Welcome, Semantic Release
   - Section License avec références aux licences tierces
   - Section Contributing
   - Section Security
