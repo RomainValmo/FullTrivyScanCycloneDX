@@ -1,3 +1,9 @@
+## [1.0.5](https://github.com/RomainValmo/FullTrivyScanCycloneDX/compare/v1.0.4...v1.0.5) (2026-01-02)
+
+### Bug Fixes
+
+* **scan:** force detect and analyse runtime ([7a6c454](https://github.com/RomainValmo/FullTrivyScanCycloneDX/commit/7a6c45452c1ddba3b9f5c9cb3359810713bf0ce3))
+
 ## [1.0.4](https://github.com/RomainValmo/FullTrivyScanCycloneDX/compare/v1.0.3...v1.0.4) (2026-01-02)
 
 ### Bug Fixes
