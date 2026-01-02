@@ -214,9 +214,7 @@ def merge_cyclonedx_sboms(base_sbom_path: Path, runtime_components: list) -> Non
     Fusionne les composants runtime détectés dans le SBOM CycloneDX existant.
     """
     try:
-        # Donner les droits d'écriture sur le fichier généré par Trivy
-        os.chmod(base_sbom_path, 0o666)
-        
+        # Lire le fichier généré par Trivy
         with open(base_sbom_path, 'r', encoding='utf-8') as f:
             sbom = json.load(f)
         
@@ -231,6 +229,8 @@ def merge_cyclonedx_sboms(base_sbom_path: Path, runtime_components: list) -> Non
             sbom["metadata"] = {}
         sbom["metadata"]["timestamp"] = datetime.now(datetime.UTC).isoformat().replace('+00:00', 'Z')
         
+        # Supprimer l'ancien fichier et créer un nouveau avec les bonnes permissions
+        os.remove(base_sbom_path)
         with open(base_sbom_path, 'w', encoding='utf-8') as f:
             json.dump(sbom, f, indent=2)
         
