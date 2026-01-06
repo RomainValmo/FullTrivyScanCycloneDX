@@ -526,6 +526,7 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
                 "aquasec/trivy:latest", "image",
                 "--format", "cyclonedx",
                 "--scanners", "vuln",
+                "--pkg-type", "library",
                 "--output", f"/project/{temp_file_name}",
                 image_tag
             ]
