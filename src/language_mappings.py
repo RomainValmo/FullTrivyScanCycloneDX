@@ -259,3 +259,29 @@ def detect_nodejs_file(dockerfile_name: str) -> str:
 def detect_java_file(dockerfile_name: str) -> str:
     """Détecte le fichier de dépendances Java le plus probable"""
     return "pom.xml"
+
+
+def categorize_github_action(action: str, workflow_file: str) -> dict:
+    """
+    Catégorise une GitHub Action.
+    
+    Args:
+        action: L'action GitHub au format owner/repo@version
+        workflow_file: Le nom du fichier workflow source
+        
+    Returns:
+        dict: Informations de catégorisation avec source_type, source_file, action_name, version
+    """
+    # Parser l'action: owner/repo@version
+    if '@' in action:
+        action_name, version = action.rsplit('@', 1)
+    else:
+        action_name = action
+        version = "latest"
+    
+    return {
+        "source_type": "github-action",
+        "source_file": workflow_file,
+        "action_name": action_name,
+        "version": version
+    }

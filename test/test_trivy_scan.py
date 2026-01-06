@@ -4,7 +4,13 @@ from pathlib import Path
 import tempfile
 import shutil
 
-from trivy_scan import extract_build_args, find_dockerfiles, find_dependency_files
+from trivy_scan import (
+    extract_build_args, 
+    find_dockerfiles, 
+    find_dependency_files, 
+    find_github_workflows, 
+    extract_actions_from_workflow
+)
 
 
 class TestExtractBuildArgs:
@@ -217,5 +223,190 @@ class TestFindDependencyFiles:
         (tmp_path / "script.py").write_text("")
         
         result = find_dependency_files(tmp_path)
+        
+        assert len(result) == 0
+
+
+class TestFindGitHubWorkflows:
+    """Tests pour la fonction find_github_workflows"""
+    
+    def test_find_workflows_yml(self, tmp_path):
+        """Test détection des workflows .yml"""
+        workflows_dir = tmp_path / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "test.yml").write_text("name: Test")
+        (workflows_dir / "build.yml").write_text("name: Build")
+        
+        result = find_github_workflows(tmp_path)
+        
+        assert len(result) == 2
+        names = [f.name for f in result]
+        assert "test.yml" in names
+        assert "build.yml" in names
+    
+    def test_find_workflows_yaml(self, tmp_path):
+        """Test détection des workflows .yaml"""
+        workflows_dir = tmp_path / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "deploy.yaml").write_text("name: Deploy")
+        
+        result = find_github_workflows(tmp_path)
+        
+        assert len(result) == 1
+        assert result[0].name == "deploy.yaml"
+    
+    def test_find_workflows_mixed_extensions(self, tmp_path):
+        """Test détection mélange .yml et .yaml"""
+        workflows_dir = tmp_path / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "ci.yml").write_text("name: CI")
+        (workflows_dir / "cd.yaml").write_text("name: CD")
+        
+        result = find_github_workflows(tmp_path)
+        
+        assert len(result) == 2
+    
+    def test_find_workflows_no_directory(self, tmp_path):
+        """Test sans répertoire .github/workflows"""
+        result = find_github_workflows(tmp_path)
+        
+        assert len(result) == 0
+    
+    def test_find_workflows_empty_directory(self, tmp_path):
+        """Test avec répertoire vide"""
+        workflows_dir = tmp_path / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        
+        result = find_github_workflows(tmp_path)
+        
+        assert len(result) == 0
+    
+    def test_find_workflows_ignore_other_files(self, tmp_path):
+        """Test ignore les fichiers non-workflow"""
+        workflows_dir = tmp_path / ".github" / "workflows"
+        workflows_dir.mkdir(parents=True)
+        (workflows_dir / "test.yml").write_text("name: Test")
+        (workflows_dir / "README.md").write_text("# Workflows")
+        (workflows_dir / "config.json").write_text("{}")
+        
+        result = find_github_workflows(tmp_path)
+        
+        assert len(result) == 1
+        assert result[0].name == "test.yml"
+
+
+class TestExtractActionsFromWorkflow:
+    """Tests pour la fonction extract_actions_from_workflow"""
+    
+    def test_extract_single_action(self, tmp_path):
+        """Test extraction d'une seule action"""
+        workflow = tmp_path / "test.yml"
+        workflow.write_text("""
+name: Test
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+""")
+        
+        result = extract_actions_from_workflow(workflow)
+        
+        assert len(result) == 1
+        assert result[0]['owner'] == "actions"
+        assert result[0]['repo'] == "checkout"
+        assert result[0]['version'] == "v4"
+        assert result[0]['full_name'] == "actions/checkout@v4"
+    
+    def test_extract_multiple_actions(self, tmp_path):
+        """Test extraction de plusieurs actions"""
+        workflow = tmp_path / "ci.yml"
+        workflow.write_text("""
+name: CI
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+      - uses: actions/upload-artifact@v4
+""")
+        
+        result = extract_actions_from_workflow(workflow)
+        
+        assert len(result) == 3
+        names = [a['full_name'] for a in result]
+        assert "actions/checkout@v4" in names
+        assert "actions/setup-python@v5" in names
+        assert "actions/upload-artifact@v4" in names
+    
+    def test_extract_multiple_jobs(self, tmp_path):
+        """Test extraction depuis plusieurs jobs"""
+        workflow = tmp_path / "workflow.yml"
+        workflow.write_text("""
+name: Multi-Job
+jobs:
+  test:
+    steps:
+      - uses: actions/checkout@v4
+  build:
+    steps:
+      - uses: actions/setup-node@v4
+""")
+        
+        result = extract_actions_from_workflow(workflow)
+        
+        assert len(result) == 2
+    
+    def test_ignore_local_actions(self, tmp_path):
+        """Test ignore les actions locales"""
+        workflow = tmp_path / "test.yml"
+        workflow.write_text("""
+name: Test
+jobs:
+  test:
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/local-action
+      - uses: ./scripts/custom-action
+""")
+        
+        result = extract_actions_from_workflow(workflow)
+        
+        assert len(result) == 1
+        assert result[0]['full_name'] == "actions/checkout@v4"
+    
+    def test_extract_no_uses(self, tmp_path):
+        """Test workflow sans actions uses"""
+        workflow = tmp_path / "test.yml"
+        workflow.write_text("""
+name: Test
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run command
+        run: echo "Hello"
+""")
+        
+        result = extract_actions_from_workflow(workflow)
+        
+        assert len(result) == 0
+    
+    def test_invalid_yaml(self, tmp_path):
+        """Test avec YAML invalide"""
+        workflow = tmp_path / "invalid.yml"
+        workflow.write_text("invalid: yaml: content: ][")
+        
+        result = extract_actions_from_workflow(workflow)
+        
+        assert len(result) == 0
+    
+    def test_empty_workflow(self, tmp_path):
+        """Test workflow vide"""
+        workflow = tmp_path / "empty.yml"
+        workflow.write_text("")
+        
+        result = extract_actions_from_workflow(workflow)
         
         assert len(result) == 0

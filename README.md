@@ -49,8 +49,46 @@ jobs:
       
       - name: Full SBOM Generation
         uses: RomainValmo/FullTrivyScanCycloneDX@main
-      
 ```
+
+### Avec scan des GitHub Actions (optionnel)
+
+```yaml
+name: Security Scan with GitHub Actions
+on: [push]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Full SBOM Generation including workflows
+        uses: RomainValmo/FullTrivyScanCycloneDX@main
+        with:
+          scan_github_actions: true
+```
+
+## Inputs
+
+| Input | Description | Requis | Défaut |
+|-------|-------------|--------|--------|
+| `scan_github_actions` | Scan les workflows GitHub Actions et inclut les actions utilisées dans le SBOM | Non | `false` |
+
+Quand `scan_github_actions` est activé, l'action :
+- 📋 Détecte tous les fichiers workflow dans `.github/workflows/`
+- 🔍 Extrait toutes les actions GitHub utilisées (format `owner/repo@version`)
+- 📥 **Clone chaque repo d'action** dans un dossier temporaire
+- 🔎 **Scanne les repos clonés** avec la même méthode (fichiers de lock, Dockerfiles)
+- 📦 Génère des SBOM CycloneDX pour les dépendances trouvées dans les actions
+- 🔗 Fusionne tous les SBOM (projet + actions) en un seul fichier final
+- 🗑️ Nettoie automatiquement les repos temporaires
+
+**Exemple** : Si votre workflow utilise `actions/checkout@v4`, l'action va :
+1. Cloner https://github.com/actions/checkout (branche v4)
+2. Scanner les `package.json`, `Dockerfile`, etc. du repo actions/checkout
+3. Générer des SBOM pour les dépendances de cette action
+4. Les inclure dans votre SBOM final
 
 ## Sorties générées
 
@@ -111,6 +149,12 @@ jobs:
 - **Java** : `pom.xml`, `build.gradle`
 - **PHP** : `composer.lock`
 - **Ruby** : `Gemfile.lock`
+
+### GitHub Actions (optionnel)
+- Workflows dans `.github/workflows/*.yml`
+- Workflows dans `.github/workflows/*.yaml`
+- Extrait les actions utilisées (`uses: owner/repo@version`)
+- Les actions locales (`./...`) sont ignorées
 
 
 ## Architecture du projet
