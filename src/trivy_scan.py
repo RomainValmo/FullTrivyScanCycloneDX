@@ -478,28 +478,11 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
             # Le fichier généré est dans clone_dir
             generated_file = clone_dir / out_file.name
             if generated_file.exists():
-                # Enrichir le SBOM avec les métadonnées de l'action AVANT de déplacer
-                with open(generated_file, 'r', encoding='utf-8') as f:
-                    sbom = json.load(f)
-                
-                # Ajouter des propriétés à tous les composants
-                for component in sbom.get('components', []):
-                    if 'properties' not in component:
-                        component['properties'] = []
-                    component['properties'].extend([
-                        {"name": "github-action:owner", "value": owner},
-                        {"name": "github-action:repo", "value": repo},
-                        {"name": "github-action:version", "value": version},
-                        {"name": "source-file", "value": dep_file.name}
-                    ])
-                
-                # Réécrire le fichier enrichi dans clone_dir
-                with open(generated_file, 'w', encoding='utf-8') as f:
-                    json.dump(sbom, f, indent=2)
-                
-                # Maintenant déplacer vers sbom_dir
+                # Déplacer directement vers sbom_dir (le fichier appartient à root, on ne peut pas le modifier)
                 shutil.move(str(generated_file), str(out_file))
                 logger.info(f"  ✅ SBOM généré : {out_file.name}")
+            else:
+                logger.warning(f"  ⚠️ Fichier SBOM non trouvé : {generated_file}")
         
         except subprocess.TimeoutExpired:
             logger.warning(f"  ⚠️ Timeout lors du scan de {dep_file.name}")
@@ -553,27 +536,11 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
             out_file = sbom_dir / temp_file_name
             
             if temp_file.exists():
-                # Enrichir avec métadonnées avant de déplacer
-                with open(temp_file, 'r', encoding='utf-8') as f:
-                    sbom = json.load(f)
-                
-                for component in sbom.get('components', []):
-                    if 'properties' not in component:
-                        component['properties'] = []
-                    component['properties'].extend([
-                        {"name": "github-action:owner", "value": owner},
-                        {"name": "github-action:repo", "value": repo},
-                        {"name": "github-action:version", "value": version},
-                        {"name": "source-file", "value": dockerfile.name}
-                    ])
-                
-                # Écrire dans le fichier temp enrichi
-                with open(temp_file, 'w', encoding='utf-8') as f:
-                    json.dump(sbom, f, indent=2)
-                
-                # Déplacer vers sbom_dir
+                # Déplacer directement vers sbom_dir (le fichier appartient à root)
                 shutil.move(str(temp_file), str(out_file))
                 logger.info(f"  ✅ SBOM image généré : {out_file.name}")
+            else:
+                logger.warning(f"  ⚠️ Fichier SBOM non trouvé : {temp_file}")
             
             # Cleanup
             subprocess.run(["docker", "rmi", image_tag], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
