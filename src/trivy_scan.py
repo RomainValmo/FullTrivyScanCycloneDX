@@ -475,13 +475,11 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
         try:
             subprocess.run(cmd, check=True, timeout=120)
             
-            # Déplacer le fichier généré vers sbom_dir
+            # Le fichier généré est dans clone_dir
             generated_file = clone_dir / out_file.name
             if generated_file.exists():
-                shutil.move(str(generated_file), str(out_file))
-                
-                # Enrichir le SBOM avec les métadonnées de l'action
-                with open(out_file, 'r', encoding='utf-8') as f:
+                # Enrichir le SBOM avec les métadonnées de l'action AVANT de déplacer
+                with open(generated_file, 'r', encoding='utf-8') as f:
                     sbom = json.load(f)
                 
                 # Ajouter des propriétés à tous les composants
@@ -495,9 +493,12 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
                         {"name": "source-file", "value": dep_file.name}
                     ])
                 
-                with open(out_file, 'w', encoding='utf-8') as f:
+                # Réécrire le fichier enrichi dans clone_dir
+                with open(generated_file, 'w', encoding='utf-8') as f:
                     json.dump(sbom, f, indent=2)
                 
+                # Maintenant déplacer vers sbom_dir
+                shutil.move(str(generated_file), str(out_file))
                 logger.info(f"  ✅ SBOM généré : {out_file.name}")
         
         except subprocess.TimeoutExpired:
