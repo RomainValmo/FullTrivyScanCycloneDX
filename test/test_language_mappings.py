@@ -2,7 +2,7 @@
 import pytest
 from pathlib import Path
 
-from language_mappings import detect_runtime_versions, categorize_component
+from language_mappings import detect_runtime_versions, categorize_component, categorize_github_action
 
 
 class TestDetectRuntimeVersions:
@@ -246,3 +246,54 @@ class TestCategorizeComponent:
         # qui retourne "dependency-file" pour les fichiers inconnus
         assert result["source_type"] == "dependency-file"
         assert result["source_file"] == "unknown"
+
+
+class TestCategorizeGitHubAction:
+    """Tests pour la fonction categorize_github_action"""
+    
+    def test_categorize_action_with_version(self):
+        """Test catégorisation d'une action avec version"""
+        result = categorize_github_action("actions/checkout@v4", "test.yml")
+        
+        assert result["source_type"] == "github-action"
+        assert result["source_file"] == "test.yml"
+        assert result["action_name"] == "actions/checkout"
+        assert result["version"] == "v4"
+    
+    def test_categorize_action_without_version(self):
+        """Test catégorisation d'une action sans version"""
+        result = categorize_github_action("actions/checkout", "deploy.yml")
+        
+        assert result["source_type"] == "github-action"
+        assert result["source_file"] == "deploy.yml"
+        assert result["action_name"] == "actions/checkout"
+        assert result["version"] == "latest"
+    
+    def test_categorize_action_with_sha(self):
+        """Test catégorisation d'une action avec SHA commit"""
+        result = categorize_github_action(
+            "actions/checkout@8e5e7e5a7a7e5e5a7a7e5e5a7a7e5e5a7a7e5e5a",
+            "ci.yml"
+        )
+        
+        assert result["action_name"] == "actions/checkout"
+        assert result["version"] == "8e5e7e5a7a7e5e5a7a7e5e5a7a7e5e5a7a7e5e5a"
+    
+    def test_categorize_action_with_path(self):
+        """Test catégorisation d'une action avec sous-chemin"""
+        result = categorize_github_action("docker/build-push-action@v5", "build.yml")
+        
+        assert result["action_name"] == "docker/build-push-action"
+        assert result["version"] == "v5"
+    
+    def test_categorize_third_party_action(self):
+        """Test catégorisation d'une action tierce"""
+        result = categorize_github_action(
+            "RomainValmo/FullTrivyScanCycloneDX@main",
+            "security.yml"
+        )
+        
+        assert result["source_type"] == "github-action"
+        assert result["action_name"] == "RomainValmo/FullTrivyScanCycloneDX"
+        assert result["version"] == "main"
+        assert result["source_file"] == "security.yml"

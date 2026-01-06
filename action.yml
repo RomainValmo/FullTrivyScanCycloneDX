@@ -9,8 +9,11 @@ branding:
 # Licensed under the MIT License
 # Copyright (c) 2025 RomainValmo
 
-# Pas d'inputs pour cette version simplifiée
-inputs: {}
+inputs:
+  scan_github_actions:
+    description: 'Scan GitHub Actions workflows and include used actions in the SBOM'
+    required: false
+    default: 'false'
 
 outputs:
   sbom-file:
@@ -35,7 +38,7 @@ runs:
       shell: bash
 
     - name: Run trivy_scan.py
-      run: python ${{ github.action_path }}/src/trivy_scan.py
+      run: python ${{ github.action_path }}/src/trivy_scan.py --scan-github-actions ${{ inputs.scan_github_actions }}
       shell: bash
 
     - name: Run merge_sbom.py

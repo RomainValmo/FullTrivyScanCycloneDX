@@ -16,6 +16,11 @@ import re
 import json
 import uuid
 from datetime import datetime, timezone
+import argparse
+import yaml
+import shutil
+import tempfile
+import shutil
 
 logging.basicConfig(
     level=logging.INFO,
@@ -260,21 +265,322 @@ def find_dependency_files(root_dir: Path, max_depth: int = 4):
                 files.append(Path(dirpath) / fname)
     return files
 
+
+def find_github_workflows(root_dir: Path) -> list:
+    """
+    Détecte les fichiers workflow GitHub Actions dans .github/workflows/
+    
+    Args:
+        root_dir: Répertoire racine du projet
+        
+    Returns:
+        Liste des chemins vers les fichiers workflow trouvés
+    """
+    workflows_dir = root_dir / ".github" / "workflows"
+    if not workflows_dir.exists():
+        return []
+    
+    workflows = []
+    for file in workflows_dir.glob("*.yml"):
+        workflows.append(file)
+    for file in workflows_dir.glob("*.yaml"):
+        workflows.append(file)
+    
+    logger.info(f"📋 Workflows GitHub Actions trouvés : {len(workflows)}")
+    return workflows
+
+
+def extract_actions_from_workflow(workflow_file: Path) -> list:
+    """
+    Parse un fichier workflow YAML et extrait toutes les actions GitHub utilisées.
+    
+    Args:
+        workflow_file: Chemin vers le fichier workflow
+        
+    Returns:
+        Liste de dictionnaires avec owner, repo, version, full_name pour chaque action
+    """
+    try:
+        with open(workflow_file, 'r', encoding='utf-8') as f:
+            workflow = yaml.safe_load(f)
+    except Exception as e:
+        logger.warning(f"⚠️ Impossible de parser {workflow_file}: {e}")
+        return []
+    
+    if not workflow or not isinstance(workflow, dict):
+        return []
+    
+    actions = []
+    jobs = workflow.get('jobs', {})
+    
+    for job_name, job_config in jobs.items():
+        if not isinstance(job_config, dict):
+            continue
+        steps = job_config.get('steps', [])
+        for step in steps:
+            if isinstance(step, dict) and 'uses' in step:
+                action = step['uses']
+                # Filtrer les actions locales (./....)
+                if not action.startswith('./'):
+                    # Parser l'action: owner/repo@version ou owner/repo/path@version
+                    if '@' in action:
+                        action_name, version = action.rsplit('@', 1)
+                    else:
+                        action_name = action
+                        version = "main"  # Par défaut main au lieu de latest
+                    
+                    # Parser owner/repo (ignorer les sous-chemins)
+                    parts = action_name.split('/')
+                    if len(parts) >= 2:
+                        owner = parts[0]
+                        repo = parts[1]
+                        
+                        actions.append({
+                            'owner': owner,
+                            'repo': repo,
+                            'version': version,
+                            'full_name': f"{owner}/{repo}@{version}"
+                        })
+    
+    return actions
+
+
+def clone_github_action_repo(owner: str, repo: str, version: str, base_temp_dir: Path) -> Path:
+    """
+    Clone un repo GitHub Action dans un dossier temporaire.
+    
+    Args:
+        owner: Propriétaire du repo (ex: 'actions')
+        repo: Nom du repo (ex: 'checkout')
+        version: Branche, tag ou SHA (ex: 'v4', 'main')
+        base_temp_dir: Répertoire temporaire de base
+        
+    Returns:
+        Chemin vers le repo cloné
+    """
+    repo_url = f"https://github.com/{owner}/{repo}.git"
+    clone_dir = base_temp_dir / f"{owner}-{repo}-{version.replace('/', '-')}"
+    
+    # Supprimer si existe déjà (pour éviter les conflits)
+    if clone_dir.exists():
+        shutil.rmtree(clone_dir)
+    
+    logger.info(f"📥 Clonage de {repo_url} @ {version}...")
+    
+    try:
+        # Détecter si c'est un SHA (40 caractères hexadécimaux)
+        is_sha = len(version) == 40 and all(c in '0123456789abcdef' for c in version.lower())
+        
+        if is_sha:
+            # Pour les SHA, cloner sans depth puis checkout
+            logger.info(f"  Détection d'un SHA commit, clone complet...")
+            cmd = [
+                "git", "clone",
+                "--no-tags",  # Pas besoin des tags pour gagner du temps
+                repo_url,
+                str(clone_dir)
+            ]
+            subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+            
+            # Checkout du SHA spécifique
+            subprocess.run(
+                ["git", "checkout", version],
+                cwd=str(clone_dir),
+                check=True,
+                capture_output=True,
+                timeout=30
+            )
+        else:
+            # Pour les branches/tags, clone shallow
+            cmd = [
+                "git", "clone",
+                "--depth", "1",
+                "--branch", version,
+                "--single-branch",
+                repo_url,
+                str(clone_dir)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            if result.returncode != 0:
+                # Fallback : clone sans restrictions
+                logger.info(f"  Tentative de clone sans restrictions...")
+                cmd_fallback = [
+                    "git", "clone",
+                    repo_url,
+                    str(clone_dir)
+                ]
+                subprocess.run(cmd_fallback, check=True, capture_output=True, timeout=120)
+                
+                # Checkout de la version spécifique
+                subprocess.run(
+                    ["git", "checkout", version],
+                    cwd=str(clone_dir),
+                    check=True,
+                    capture_output=True,
+                    timeout=30
+                )
+        
+        logger.info(f"✅ Repo cloné dans {clone_dir}")
+        return clone_dir
+    
+    except subprocess.TimeoutExpired:
+        logger.error(f"❌ Timeout lors du clone de {owner}/{repo}")
+        raise
+    except subprocess.CalledProcessError as e:
+        logger.error(f"❌ Erreur lors du clone de {owner}/{repo}: {e.stderr}")
+        raise
+
+
+def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, root_dir: Path):
+    """
+    Scanne un repo GitHub Action cloné avec les méthodes existantes.
+    
+    Args:
+        action_info: Dict avec owner, repo, version, full_name
+        clone_dir: Répertoire du repo cloné
+        sbom_dir: Répertoire de sortie pour les SBOM
+        root_dir: Répertoire racine du projet principal (pour Docker)
+    """
+    owner = action_info['owner']
+    repo = action_info['repo']
+    version = action_info['version']
+    full_name = action_info['full_name']
+    
+    logger.info(f"\n🔍 Scan de {full_name}...")
+    
+    # Scanner les fichiers de dépendances
+    dep_files = find_dependency_files(clone_dir, max_depth=4)
+    logger.info(f"  Fichiers de dépendances trouvés : {len(dep_files)}")
+    
+    for dep_file in dep_files:
+        out_file = sbom_dir / f"{owner}-{repo}-{dep_file.name}.cdx.json"
+        logger.info(f"  Scan Trivy : {dep_file.name}")
+        
+        dep_file_posix = dep_file.relative_to(clone_dir).as_posix()
+        
+        cmd = [
+            "docker", "run", "--rm",
+            "-v", f"{clone_dir}:/project",
+            "aquasec/trivy:latest", "fs",
+            "--format", "cyclonedx",
+            "--scanners", "vuln",
+            "--output", f"/project/{out_file.name}",
+            f"/project/{dep_file_posix}"
+        ]
+        
+        try:
+            subprocess.run(cmd, check=True, timeout=120)
+            
+            # Le fichier généré est dans clone_dir
+            generated_file = clone_dir / out_file.name
+            if generated_file.exists():
+                # Déplacer directement vers sbom_dir (le fichier appartient à root, on ne peut pas le modifier)
+                shutil.move(str(generated_file), str(out_file))
+                logger.info(f"  ✅ SBOM généré : {out_file.name}")
+            else:
+                logger.warning(f"  ⚠️ Fichier SBOM non trouvé : {generated_file}")
+        
+        except subprocess.TimeoutExpired:
+            logger.warning(f"  ⚠️ Timeout lors du scan de {dep_file.name}")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Erreur lors du scan de {dep_file.name}: {e}")
+    
+    # Scanner les Dockerfiles
+    dockerfiles = find_dockerfiles(clone_dir, max_depth=3)
+    logger.info(f"  Dockerfiles trouvés : {len(dockerfiles)}")
+    
+    for dockerfile in dockerfiles:
+        try:
+            build_args = extract_build_args(dockerfile)
+            logger.info(f"  📝 Build args pour {dockerfile.name}: {build_args}")
+            
+            image_tag = f"sbom-action-{owner}-{repo}-{dockerfile.parent.name}".lower()
+            logger.info(f"  Build Docker : {image_tag}")
+            
+            build_cmd = [
+                "docker", "build",
+                "-f", str(dockerfile),
+                "-t", image_tag,
+            ]
+            
+            for arg_name, arg_value in build_args.items():
+                build_cmd.extend(["--build-arg", f"{arg_name}={arg_value}"])
+            
+            build_cmd.append(str(dockerfile.parent))
+            
+            subprocess.run(build_cmd, check=True, timeout=300)
+            
+            # Nom du fichier de sortie
+            out_name = f"{owner}-{repo}-{dockerfile.parent.name}-image"
+            temp_file_name = f"{out_name}.cdx.json"
+            
+            # Scanner l'image et écrire dans clone_dir (pour éviter les problèmes de permissions)
+            scan_cmd = [
+                "docker", "run", "--rm",
+                "-v", f"{clone_dir}:/project",
+                "-v", "/var/run/docker.sock:/var/run/docker.sock",
+                "aquasec/trivy:latest", "image",
+                "--format", "cyclonedx",
+                "--scanners", "vuln",
+                "--pkg-types", "library",
+                "--output", f"/project/{temp_file_name}",
+                image_tag
+            ]
+            subprocess.run(scan_cmd, check=True, timeout=120)
+            
+            # Déplacer le fichier vers sbom_dir
+            temp_file = clone_dir / temp_file_name
+            out_file = sbom_dir / temp_file_name
+            
+            if temp_file.exists():
+                # Déplacer directement vers sbom_dir (le fichier appartient à root)
+                shutil.move(str(temp_file), str(out_file))
+                logger.info(f"  ✅ SBOM image généré : {out_file.name}")
+            else:
+                logger.warning(f"  ⚠️ Fichier SBOM non trouvé : {temp_file}")
+            
+            # Cleanup
+            subprocess.run(["docker", "rmi", image_tag], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        except subprocess.TimeoutExpired:
+            logger.warning(f"  ⚠️ Timeout lors du build/scan de {dockerfile.name}")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Erreur lors du scan de {dockerfile.name}: {e}")
+
+
 if __name__ == "__main__":
+    # Parser les arguments de ligne de commande
+    parser = argparse.ArgumentParser(description="Full Trivy Scan with CycloneDX SBOM")
+    parser.add_argument(
+        "--scan-github-actions",
+        type=str,
+        default="false",
+        help="Scan GitHub Actions workflows (true/false)"
+    )
+    args = parser.parse_args()
+    
+    # Convertir la chaîne en booléen
+    scan_github_actions = args.scan_github_actions.lower() in ('true', '1', 'yes')
+    
     root_dir = Path.cwd()
     sbom_dir = root_dir / "sbom"
     sbom_dir.mkdir(exist_ok=True)
-    logger.info(f"Recherche des fichiers de dépendances dans : {root_dir}")
+    
+    logger.info("=== Full Trivy Scan avec CycloneDX SBOM ===")
+    logger.info(f"Répertoire racine : {root_dir}")
+    logger.info(f"Scan GitHub Actions : {scan_github_actions}")
+    
+    # Scan des fichiers de dépendances
     dep_files = find_dependency_files(root_dir)
-    logger.info(f"Fichiers trouvés : {dep_files}")
-
+    logger.info(f"Fichiers de dépendances trouvés : {dep_files}")
+    
     for dep_file in dep_files:
         out_file = sbom_dir / (dep_file.name + ".cdx.json")
-
         logger.info(f"Scan Trivy CycloneDX : {dep_file} -> {out_file}")
-
-        out_file_posix = str(out_file.relative_to(root_dir)).replace('\\', '/')
-        dep_file_posix = str(dep_file.relative_to(root_dir)).replace('\\', '/')
+        
+        dep_file_posix = dep_file.relative_to(root_dir).as_posix()
+        
         cmd = [
             "docker", "run", "--rm",
             "-v", f"{root_dir}:/project",
@@ -288,6 +594,7 @@ if __name__ == "__main__":
     
     logger.info(f"Scan terminé. Tous les SBOM sont dans : {sbom_dir}")
 
+    # Scan des Dockerfiles
     dockerfiles = find_dockerfiles(root_dir)
     logger.info(f"Dockerfiles trouvés : {dockerfiles}")
     
@@ -295,7 +602,7 @@ if __name__ == "__main__":
         build_args = extract_build_args(dockerfile)
         logger.info(f"📝 Build args détectés pour {dockerfile.name}: {build_args}")
         
-        image_tag = f"sbom-scan-{dockerfile.parent.name.lower()}"
+        image_tag = f"sbom-scan-{dockerfile.parent.name}".lower()
         logger.info(f"Build de l'image Docker : {dockerfile} -> {image_tag}")
         
         build_cmd = [
@@ -335,3 +642,58 @@ if __name__ == "__main__":
         
         # Cleanup de l'image
         subprocess.run(["docker", "rmi", image_tag], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    # Scan des workflows GitHub Actions (si activé)
+    if scan_github_actions:
+        logger.info("\n=== Scan des workflows GitHub Actions ===")
+        workflows = find_github_workflows(root_dir)
+        
+        if workflows:
+            # Créer un dossier temporaire pour cloner les repos
+            temp_dir = Path(tempfile.mkdtemp(prefix="github-actions-"))
+            logger.info(f"📁 Dossier temporaire : {temp_dir}")
+            
+            try:
+                # Extraire toutes les actions uniques
+                all_actions = {}
+                for workflow in workflows:
+                    logger.info(f"\n📋 Analyse du workflow : {workflow.name}")
+                    actions = extract_actions_from_workflow(workflow)
+                    
+                    for action in actions:
+                        full_name = action['full_name']
+                        if full_name not in all_actions:
+                            all_actions[full_name] = action
+                            logger.info(f"  ✓ {full_name}")
+                
+                if all_actions:
+                    logger.info(f"\n🔍 {len(all_actions)} actions uniques à scanner")
+                    
+                    # Scanner chaque action
+                    for action_info in all_actions.values():
+                        try:
+                            # Clone le repo
+                            clone_dir = clone_github_action_repo(
+                                action_info['owner'],
+                                action_info['repo'],
+                                action_info['version'],
+                                temp_dir
+                            )
+                            
+                            # Scanne le repo cloné
+                            scan_github_action_repo(action_info, clone_dir, sbom_dir, root_dir)
+                            
+                        except Exception as e:
+                            logger.error(f"❌ Erreur lors du scan de {action_info['full_name']}: {e}")
+                            continue
+                else:
+                    logger.info("Aucune action externe trouvée dans les workflows")
+            
+            finally:
+                # Cleanup du dossier temporaire
+                logger.info(f"\n🗑️ Nettoyage du dossier temporaire...")
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        else:
+            logger.info("Aucun workflow GitHub Actions trouvé dans .github/workflows/")
+    
+    logger.info("\n✅ Scan terminé avec succès")
