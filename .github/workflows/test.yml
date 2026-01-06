@@ -82,6 +82,7 @@ jobs:
       - name: Run integration tests
         run: |
           cd test
+          pip install -r ../requirements-dev.txt
           python ../src/trivy_scan.py || true
           python ../src/merge_sbom.py || true
           
