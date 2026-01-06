@@ -465,7 +465,6 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
             "aquasec/trivy:latest", "fs",
             "--format", "cyclonedx",
             "--scanners", "vuln",
-            "--list-all-pkgs",
             "--skip-db-update",
             "--output", f"/project/{out_file.name}",
             f"/project/{dep_file_posix}"
