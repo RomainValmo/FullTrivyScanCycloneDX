@@ -498,7 +498,7 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
             build_args = extract_build_args(dockerfile)
             logger.info(f"  📝 Build args pour {dockerfile.name}: {build_args}")
             
-            image_tag = f"sbom-action-{owner}-{repo}-{dockerfile.parent.name.lower()}"
+            image_tag = f"sbom-action-{owner}-{repo}-{dockerfile.parent.name}".lower()
             logger.info(f"  Build Docker : {image_tag}")
             
             build_cmd = [
@@ -604,7 +604,7 @@ if __name__ == "__main__":
         build_args = extract_build_args(dockerfile)
         logger.info(f"📝 Build args détectés pour {dockerfile.name}: {build_args}")
         
-        image_tag = f"sbom-scan-{dockerfile.parent.name.lower()}"
+        image_tag = f"sbom-scan-{dockerfile.parent.name}".lower()
         logger.info(f"Build de l'image Docker : {dockerfile} -> {image_tag}")
         
         build_cmd = [
