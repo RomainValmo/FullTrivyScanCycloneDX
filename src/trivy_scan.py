@@ -371,29 +371,21 @@ def clone_github_action_repo(owner: str, repo: str, version: str, base_temp_dir:
     logger.info(f"📥 Clonage de {repo_url} @ {version}...")
     
     try:
-        # Clone shallow avec une seule branche
-        cmd = [
-            "git", "clone",
-            "--depth", "1",
-            "--branch", version,
-            "--single-branch",
-            repo_url,
-            str(clone_dir)
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        # Détecter si c'est un SHA (40 caractères hexadécimaux)
+        is_sha = len(version) == 40 and all(c in '0123456789abcdef' for c in version.lower())
         
-        if result.returncode != 0:
-            # Si la branche n'existe pas, essayer sans --branch (pour les SHA)
-            logger.info(f"  Tentative de clone sans branche spécifique...")
-            cmd_no_branch = [
+        if is_sha:
+            # Pour les SHA, cloner sans depth puis checkout
+            logger.info(f"  Détection d'un SHA commit, clone complet...")
+            cmd = [
                 "git", "clone",
-                "--depth", "1",
+                "--no-tags",  # Pas besoin des tags pour gagner du temps
                 repo_url,
                 str(clone_dir)
             ]
-            subprocess.run(cmd_no_branch, check=True, capture_output=True, timeout=60)
+            subprocess.run(cmd, check=True, capture_output=True, timeout=120)
             
-            # Checkout de la version spécifique
+            # Checkout du SHA spécifique
             subprocess.run(
                 ["git", "checkout", version],
                 cwd=str(clone_dir),
@@ -401,6 +393,36 @@ def clone_github_action_repo(owner: str, repo: str, version: str, base_temp_dir:
                 capture_output=True,
                 timeout=30
             )
+        else:
+            # Pour les branches/tags, clone shallow
+            cmd = [
+                "git", "clone",
+                "--depth", "1",
+                "--branch", version,
+                "--single-branch",
+                repo_url,
+                str(clone_dir)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            if result.returncode != 0:
+                # Fallback : clone sans restrictions
+                logger.info(f"  Tentative de clone sans restrictions...")
+                cmd_fallback = [
+                    "git", "clone",
+                    repo_url,
+                    str(clone_dir)
+                ]
+                subprocess.run(cmd_fallback, check=True, capture_output=True, timeout=120)
+                
+                # Checkout de la version spécifique
+                subprocess.run(
+                    ["git", "checkout", version],
+                    cwd=str(clone_dir),
+                    check=True,
+                    capture_output=True,
+                    timeout=30
+                )
         
         logger.info(f"✅ Repo cloné dans {clone_dir}")
         return clone_dir
@@ -508,22 +530,30 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
             
             subprocess.run(build_cmd, check=True, timeout=300)
             
-            out_file = sbom_dir / f"{owner}-{repo}-{dockerfile.parent.name}-image.cdx.json"
+            # Nom du fichier de sortie
+            out_name = f"{owner}-{repo}-{dockerfile.parent.name}-image"
+            temp_file_name = f"{out_name}.cdx.json"
+            
+            # Scanner l'image et écrire dans clone_dir (pour éviter les problèmes de permissions)
             scan_cmd = [
                 "docker", "run", "--rm",
-                "-v", f"{root_dir}:/project",
+                "-v", f"{clone_dir}:/project",
                 "-v", "/var/run/docker.sock:/var/run/docker.sock",
                 "aquasec/trivy:latest", "image",
                 "--format", "cyclonedx",
                 "--scanners", "vuln",
-                "--output", f"/project/sbom/{out_file.name}",
+                "--output", f"/project/{temp_file_name}",
                 image_tag
             ]
             subprocess.run(scan_cmd, check=True, timeout=120)
             
-            # Enrichir avec métadonnées
-            if out_file.exists():
-                with open(out_file, 'r', encoding='utf-8') as f:
+            # Déplacer le fichier vers sbom_dir
+            temp_file = clone_dir / temp_file_name
+            out_file = sbom_dir / temp_file_name
+            
+            if temp_file.exists():
+                # Enrichir avec métadonnées avant de déplacer
+                with open(temp_file, 'r', encoding='utf-8') as f:
                     sbom = json.load(f)
                 
                 for component in sbom.get('components', []):
@@ -536,10 +566,13 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
                         {"name": "source-file", "value": dockerfile.name}
                     ])
                 
-                with open(out_file, 'w', encoding='utf-8') as f:
+                # Écrire dans le fichier temp enrichi
+                with open(temp_file, 'w', encoding='utf-8') as f:
                     json.dump(sbom, f, indent=2)
-            
-            logger.info(f"  ✅ Image scannée : {image_tag}")
+                
+                # Déplacer vers sbom_dir
+                shutil.move(str(temp_file), str(out_file))
+                logger.info(f"  ✅ SBOM image généré : {out_file.name}")
             
             # Cleanup
             subprocess.run(["docker", "rmi", image_tag], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
