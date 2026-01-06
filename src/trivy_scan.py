@@ -21,9 +21,6 @@ import yaml
 import shutil
 import tempfile
 import shutil
-import tempfile
-import shutil
-import tempfile
 
 logging.basicConfig(
     level=logging.INFO,
@@ -526,7 +523,7 @@ def scan_github_action_repo(action_info: dict, clone_dir: Path, sbom_dir: Path, 
                 "aquasec/trivy:latest", "image",
                 "--format", "cyclonedx",
                 "--scanners", "vuln",
-                "--pkg-type", "library",
+                "--pkg-types", "library",
                 "--output", f"/project/{temp_file_name}",
                 image_tag
             ]
